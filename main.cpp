@@ -6,7 +6,7 @@
 //
 
 #include <iostream>
-#include <opencv2/core.hpp>
+#include <opencv2/core/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 #include <opencv2/highgui/highgui.hpp>
@@ -21,24 +21,25 @@
 #include "findEyeCenter.h"
 #include "findEyeCorner.h"
 
-/* Attempt at supporting openCV version 4.0.1 or higher */
-#if CV_MAJOR_VERSION >= 4
-#define CV_WINDOW_NORMAL                cv::WINDOW_NORMAL
-#define CV_BGR2YCrCb                    cv::COLOR_BGR2YCrCb
-#define CV_HAAR_SCALE_IMAGE             cv::CASCADE_SCALE_IMAGE
-#define CV_HAAR_FIND_BIGGEST_OBJECT     cv::CASCADE_FIND_BIGGEST_OBJECT
-#endif
-
-
-/** Constants **/
-
+/*
+* Issues with this repo:
+* 1: (important) the eye detection works poorly when user has glasses
+*       - it seems that the haarcascade handles eyeglasses, but not well
+*       - might be improved after playing around with parameters in "constants.h"
+* 2: (important) the detection algorithm has significant delay when the user has abrupt motion (or when user's eyes are at the edge/outside the field of view).
+*       - need more test to determine when this happens 
+*       - check face/eye detection process. It's possible that the program loses the sense of where the face/eye are when above scenarios happen.
+* 3: not sure what "kEnableEyeCorner" is for
+* 4: the GUI is buggy -- too many windows
+*       - also the rect drawing code inside "findEye" function is simply too overwhelming... clean it up if possible
+* 5: (important) the actual frame processing frequency is much lower than camera capture frequency, figure out where the dropped frames go and why they are discarded
+*/
 
 /** Function Headers */
 void detectAndDisplay( cv::Mat frame );
 
 /** Global variables */
-//-- Note, either copy these two files from opencv/data/haarscascades to your current folder, or change these locations
-cv::String face_cascade_name = pathName;
+cv::String face_cascade_name = "haarcascade_frontalface_alt.xml";
 cv::CascadeClassifier face_cascade;
 std::string main_window_name = "Capture - Face detection";
 std::string face_window_name = "Capture - Face";
@@ -63,28 +64,14 @@ int main( int argc, const char** argv ) {
   cv::namedWindow("Left Eye",CV_WINDOW_NORMAL);
   cv::moveWindow("Left Eye", 10, 800);
 
-  /* As the matrix dichotomy will not be applied, these windows are useless.
-  cv::namedWindow("aa",CV_WINDOW_NORMAL);
-  cv::moveWindow("aa", 10, 800);
-  cv::namedWindow("aaa",CV_WINDOW_NORMAL);
-  cv::moveWindow("aaa", 10, 800);*/
-
   createCornerKernels();
   ellipse(skinCrCbHist, cv::Point(113, 155), cv::Size(23, 15),
           43.0, 0.0, 360.0, cv::Scalar(255, 255, 255), -1);
 
-  // I make an attempt at supporting both 2.x and 3.x OpenCV
-#if CV_MAJOR_VERSION < 3
-  CvCapture* capture = cvCaptureFromCAM( 0 );
-  if( capture ) {
-    while( true ) {
-      frame = cvQueryFrame( capture );
-#else
   cv::VideoCapture capture(0);
   if( capture.isOpened() ) {
     while( true ) {
       capture.read(frame);
-#endif
       // mirror it
       cv::flip(frame, frame, 1);
       frame.copyTo(debugImage);
@@ -140,19 +127,23 @@ void findEyes(cv::Mat frame_gray, cv::Rect face) {
   leftRightCornerRegion.x += leftPupil.x;
   leftRightCornerRegion.height /= 2;
   leftRightCornerRegion.y += leftRightCornerRegion.height / 2;
+
   cv::Rect leftLeftCornerRegion(leftEyeRegion);
   leftLeftCornerRegion.width = leftPupil.x;
   leftLeftCornerRegion.height /= 2;
   leftLeftCornerRegion.y += leftLeftCornerRegion.height / 2;
+
   cv::Rect rightLeftCornerRegion(rightEyeRegion);
   rightLeftCornerRegion.width = rightPupil.x;
   rightLeftCornerRegion.height /= 2;
   rightLeftCornerRegion.y += rightLeftCornerRegion.height / 2;
+
   cv::Rect rightRightCornerRegion(rightEyeRegion);
   rightRightCornerRegion.width -= rightPupil.x;
   rightRightCornerRegion.x += rightPupil.x;
   rightRightCornerRegion.height /= 2;
   rightRightCornerRegion.y += rightRightCornerRegion.height / 2;
+
   rectangle(debugFace,leftRightCornerRegion,200);
   rectangle(debugFace,leftLeftCornerRegion,200);
   rectangle(debugFace,rightLeftCornerRegion,200);
@@ -171,15 +162,19 @@ void findEyes(cv::Mat frame_gray, cv::Rect face) {
     cv::Point2f leftRightCorner = findEyeCorner(faceROI(leftRightCornerRegion), true, false);
     leftRightCorner.x += leftRightCornerRegion.x;
     leftRightCorner.y += leftRightCornerRegion.y;
+
     cv::Point2f leftLeftCorner = findEyeCorner(faceROI(leftLeftCornerRegion), true, true);
     leftLeftCorner.x += leftLeftCornerRegion.x;
     leftLeftCorner.y += leftLeftCornerRegion.y;
+
     cv::Point2f rightLeftCorner = findEyeCorner(faceROI(rightLeftCornerRegion), false, true);
     rightLeftCorner.x += rightLeftCornerRegion.x;
     rightLeftCorner.y += rightLeftCornerRegion.y;
+
     cv::Point2f rightRightCorner = findEyeCorner(faceROI(rightRightCornerRegion), false, false);
     rightRightCorner.x += rightRightCornerRegion.x;
     rightRightCorner.y += rightRightCornerRegion.y;
+
     circle(faceROI, leftRightCorner, 3, 200);
     circle(faceROI, leftLeftCorner, 3, 200);
     circle(faceROI, rightLeftCorner, 3, 200);

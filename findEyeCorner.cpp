@@ -68,6 +68,7 @@ cv::Point2f findEyeCorner(cv::Mat region, bool left, bool left2) {
 
   return maxP2;
 }
+
 cv::Point2f findSubpixelEyeCorner(cv::Mat region, cv::Point maxP) {
 
   cv::Size sizeRegion = region.size();

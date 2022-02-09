@@ -33,3 +33,7 @@ constants.h
 *.exe
 *.out
 *.app
+
+#ignore cmake and system files
+out/
+.vs/

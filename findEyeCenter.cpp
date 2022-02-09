@@ -122,6 +122,7 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
   cv::Mat mags = matrixMagnitude(gradientX, gradientY);
   //compute the threshold
     //TODO: figure out what this is
+    //The algorithm removes all gradients that are below the threshold = 0.3 * stdev(Magnitude of Gradient) + Mean(Magnitude of Gradient)
   double gradientThresh = computeDynamicThreshold(mags, kGradientThreshold);
   //double gradientThresh = kGradientThreshold;
   //double gradientThresh = 0;
@@ -144,12 +145,14 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
   }
     //TODO: this makes no sense. The "mags" matrix is a white image with black dots scattered about.
     imshow(debugWindow,mags);
-
+    //Mags matrix is just supposed to be a matrix calculating the magnitude of the gradient at the point. It's not supposed to be an image.
+    //imshow(debugWindow,mags);
     
   //-- Create a blurred and inverted image for weighting
     
     //this is an image where the iris is white, and sclera is black
     //there's also a gaussian blur on it which means it's lower resolution. TODO: find out why there's a gaussian blur
+    //Gaussian blur helps to reduce image noise
   cv::Mat weight;
   GaussianBlur( eyeROI, weight, cv::Size( kWeightBlurSize, kWeightBlurSize ), 0, 0 );
   for (int y = 0; y < weight.rows; ++y) {
@@ -191,36 +194,41 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
   outSum.convertTo(out, CV_32F,1.0/numGradients);
     
     //find maximum point
+  outSum.convertTo(out, CV_32F,1.0/numGradients); //Convert the bit depth to C32F for use in further functions and scale all the values down
+    //Depth basically refers to the amount of recision used to store the pixels in an image
+  //imshow(debugWindow,out);
+  //-- Find the maximum point
   cv::Point maxP;
   double maxVal;
-  cv::minMaxLoc(out, NULL,&maxVal,NULL,&maxP);
+  cv::minMaxLoc(out, NULL,&maxVal,NULL,&maxP); //Calculate max and min values of the matrix and store it in the given variable
   //-- Flood fill the edges
   if(kEnablePostProcess) {
     cv::Mat floodClone;
     //double floodThresh = computeDynamicThreshold(out, 1.5);
-    double floodThresh = maxVal * kPostProcessThreshold;
-    cv::threshold(out, floodClone, floodThresh, 0.0f, cv::THRESH_TOZERO);
+    double floodThresh = maxVal * kPostProcessThreshold; //Compute post-processing threshold
+    cv::threshold(out, floodClone, floodThresh, 0.0f, cv::THRESH_TOZERO); //Function used to apply an adaptive threshold on the image and set points below the threshold to zero
     if(kPlotVectorField) {
       //plotVecField(gradientX, gradientY, floodClone);
       imwrite("eyeFrame.png",eyeROIUnscaled);
     }
-    cv::Mat mask = floodKillEdges(floodClone);
+    cv::Mat mask = floodKillEdges(floodClone); //Returns a mask of the image by removing all gradients above a particular threshold since those are likely associated with hair strands or reflection from glasses
     //imshow(debugWindow + " Mask",mask);
     //imshow(debugWindow,out);
     // redo max
-    cv::minMaxLoc(out, NULL,&maxVal,NULL,&maxP,mask);
+    cv::minMaxLoc(out, NULL,&maxVal,NULL,&maxP,mask); //Determine the maximum point of the remaining values and the point obtained is our estimation of the center
   }
-  return unscalePoint(maxP,eye);
+  return unscalePoint(maxP,eye); //Return back the unscaled point estimate of the center
 }
 
 #pragma mark Postprocessing
 
 bool floodShouldPushPoint(const cv::Point &np, const cv::Mat &mat) {
-  return inMat(np, mat.rows, mat.cols);
+  return inMat(np, mat.rows, mat.cols); //Check if the point lies within the matrix
 }
 
 // returns a mask
 cv::Mat floodKillEdges(cv::Mat &mat) {
+    //Post-processing method to remove all the remaining values that are connected to the border of the image
   rectangle(mat,cv::Rect(0,0,mat.cols,mat.rows),255);
   
   cv::Mat mask(mat.rows, mat.cols, CV_8U, 255);
@@ -230,9 +238,10 @@ cv::Mat floodKillEdges(cv::Mat &mat) {
     cv::Point p = toDo.front();
     toDo.pop();
     if (mat.at<float>(p) == 0.0f) {
+        //Remove all the values that are not zero and are connected to one of the image borders
       continue;
     }
-    // add in every direction
+    // add in every direction to go through all points connected to the image borders
     cv::Point np(p.x + 1, p.y); // right
     if (floodShouldPushPoint(np, mat)) toDo.push(np);
     np.x = p.x - 1; np.y = p.y; // left

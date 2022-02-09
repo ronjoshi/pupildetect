@@ -74,6 +74,8 @@ cv::Mat computeMatXGradient(const cv::Mat &mat) {
 
 #pragma mark Main Algorithm
 
+// it evaluates every possible center for each gradient location instead of
+// every possible gradient location for every center.
 void testPossibleCentersFormula(int x, int y, const cv::Mat &weight,double gx, double gy, cv::Mat &out) {
   // for all possible centers
   for (int cy = 0; cy < out.rows; ++cy) {
@@ -81,6 +83,7 @@ void testPossibleCentersFormula(int x, int y, const cv::Mat &weight,double gx, d
     const unsigned char *Wr = weight.ptr<unsigned char>(cy);
     for (int cx = 0; cx < out.cols; ++cx) {
       if (x == cx && y == cy) {
+          //skip point if center is the same point as gradient origin
         continue;
       }
       // create a vector from the possible center to the gradient origin
@@ -93,6 +96,7 @@ void testPossibleCentersFormula(int x, int y, const cv::Mat &weight,double gx, d
       double dotProduct = dx*gx + dy*gy;
       dotProduct = std::max(0.0,dotProduct);
       // square and multiply by the weight
+        //TODO: find out why they use a constant to multiply it with
       if (kEnableWeight) {
         Or[cx] += dotProduct * dotProduct * (Wr[cx]/kWeightDivisor);
       } else {
@@ -139,7 +143,7 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
     }
   }
     //TODO: this makes no sense. The "mags" matrix is a white image with black dots scattered about.
-    //imshow(debugWindow,mags);
+    imshow(debugWindow,mags);
 
     
   //-- Create a blurred and inverted image for weighting
@@ -160,25 +164,33 @@ cv::Point findEyeCenter(cv::Mat face, cv::Rect eye, std::string debugWindow) {
   cv::Mat outSum = cv::Mat::zeros(eyeROI.rows,eyeROI.cols,CV_64F);
   // for each possible gradient location
   // Note: these loops are reversed from the way the paper does them
-  // it evaluates every possible center for each gradient location instead of
-  // every possible gradient location for every center.
+
   printf("Eye Size: %ix%i\n",outSum.cols,outSum.rows);
   for (int y = 0; y < weight.rows; ++y) {
     const double *Xr = gradientX.ptr<double>(y), *Yr = gradientY.ptr<double>(y);
     for (int x = 0; x < weight.cols; ++x) {
       double gX = Xr[x], gY = Yr[x];
       if (gX == 0.0 && gY == 0.0) {
+          // If the gradientX and gradientY values at this position are 0, then skip this single pixel.
         continue;
       }
+        //x, y is the position of the pixel,
+        //gX, gY are the NORMALIZED x and y gradient values of that specific pixel (x, y).
+        //weight is the gaussian blurred matrix
+        //outsum is an empty matrix
       testPossibleCentersFormula(x, y, weight, gX, gY, outSum);
+        // it evaluates every possible center for each gradient location instead of
+        // every possible gradient location for every center.
     }
   }
   // scale all the values down, basically averaging them
   double numGradients = (weight.rows*weight.cols);
   cv::Mat out;
+    
+    //this method copies outSum to out, while multiplying each value by 1.0/numGradients
   outSum.convertTo(out, CV_32F,1.0/numGradients);
-  //imshow(debugWindow,out);
-  //-- Find the maximum point
+    
+    //find maximum point
   cv::Point maxP;
   double maxVal;
   cv::minMaxLoc(out, NULL,&maxVal,NULL,&maxP);
